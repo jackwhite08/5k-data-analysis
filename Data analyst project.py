@@ -1,6 +1,7 @@
 import pygame
 import pandas as pd
 import os
+from datetime import datetime
 
 pygame.init()
 screen = pygame.display.set_mode((600, 600))
@@ -106,6 +107,7 @@ def draw_input_screen():
 
 def save_to_csv(values):
     df_new = pd.DataFrame([{
+        "Date": datetime.now().strftime("%Y-%m-%d"),  # the date
         "Total_5k": values[0],
         "Split_1k": values[1],
         "Split_2k": values[2],
@@ -127,10 +129,127 @@ def draw_coming_soon(title_text):
     screen.blit(coming, (230, 300))
 
 def draw_top_scores():
-    draw_coming_soon("Top Scores")
+
+    screen.fill(WHITE)
+    title = font.render("Top 10 Times!", True, BLACK)
+    screen.blit(title, (240, 70))
+    draw_back_button()
+
+    # Check if data exists
+    if not os.path.exists(FILE_PATH) or os.stat(FILE_PATH).st_size == 0:
+        no_data = font.render("No data available yet!", True, BLACK)
+        screen.blit(no_data, (200, 300))
+        return
+
+    try:
+        # Read CSV
+        df = pd.read_csv(FILE_PATH)
+
+        # Drop rows without valid 5k total time
+        df = df[pd.to_numeric(df["Total_5k"], errors='coerce').notna()]
+
+        # Sort ascending (fastest times first)
+        df = df.sort_values(by="Total_5k").head(10).reset_index(drop=True)
+
+        # Display top 10 on screen
+        y_offset = 150
+        for i, row in df.iterrows():
+            time_text = f"{i+1}.  {row['Total_5k']} mins"
+            entry = font.render(time_text, True, BLACK)
+            screen.blit(entry, (240, y_offset))
+            y_offset += 40
+
+    except Exception as e:
+        error_msg = font.render(f"Error reading scores: {str(e)}", True, (200, 0, 0))
+        screen.blit(error_msg, (100, 300))
+
 
 def draw_recent_scores():
-    draw_coming_soon("Recent Scores")
+
+    screen.fill(WHITE)
+    title = font.render("10 Most Recent Times", True, BLACK)
+    screen.blit(title, (180, 60))
+    draw_back_button()
+
+    # Check if CSV exists and has data
+    if not os.path.exists(FILE_PATH) or os.stat(FILE_PATH).st_size == 0:
+        no_data = font.render("No data available yet!", True, BLACK)
+        screen.blit(no_data, (200, 300))
+        return
+
+    try:
+        df = pd.read_csv(FILE_PATH)
+
+        # Get last 10 entries, newest first
+        recent_df = df.tail(10).iloc[::-1].reset_index(drop=True)
+
+        # --- Draw the list of recent scores ---
+        y_offset = 150
+        for i, row in recent_df.iterrows():
+            date = row['Date'] if 'Date' in df.columns else 'Unknown Date'
+            line = f"{i+1}. {date} — {row['Total_5k']} mins"
+            entry = font.render(line, True, BLACK)
+            screen.blit(entry, (30, y_offset))
+            y_offset += 40
+
+        # --- Draw the graph of recent scores ---
+        draw_recent_graph(recent_df)
+
+    except Exception as e:
+        error_msg = font.render(f"Error reading scores: {str(e)}", True, (200, 0, 0))
+        screen.blit(error_msg, (100, 300))
+
+def draw_recent_graph(df):
+    if df.empty:
+        return
+
+    # Graph area
+    graph_rect = pygame.Rect(350, 150, 220, 300)
+    pygame.draw.rect(screen, (230, 230, 230), graph_rect)  # light gray background
+    pygame.draw.rect(screen, BLACK, graph_rect, 2)  # border
+
+    # Numeric Total_5k values
+    times = pd.to_numeric(df['Total_5k'], errors='coerce').dropna()
+    if times.empty:
+        return
+
+    min_time = times.min()
+    max_time = times.max()
+    range_time = max_time - min_time
+    if range_time == 0:
+        range_time = 1  # prevent division by zero
+
+    points = []
+    n_points = len(times)
+    for i, t in enumerate(times):
+        # x-coordinate: newest on the right
+        if n_points == 1:
+            x = graph_rect.x + graph_rect.width / 2
+        else:
+            # Reverse order: i=0 (newest) is on the right
+            x = graph_rect.x + graph_rect.width - 10 - i * (graph_rect.width - 20) / (n_points - 1)
+        y = graph_rect.y + graph_rect.height - 10 - ((t - min_time) / range_time) * (graph_rect.height - 20)
+        points.append((x, y))
+
+    # Draw connecting lines
+    if len(points) > 1:
+        pygame.draw.lines(screen, (0, 100, 200), False, points, 3)
+
+    # Draw points as red circles
+    for x, y in points:
+        pygame.draw.circle(screen, (200, 0, 0), (int(x), int(y)), 5)
+
+    # Draw x-axis labels (entry numbers)
+    for i, (x, _) in enumerate(points):
+        label = font.render(str(i+1), True, BLACK)
+        screen.blit(label, (x - 5, graph_rect.y + graph_rect.height + 5))
+
+    # Draw min/max labels on y-axis
+    min_label = font.render(f"{min_time:.2f}", True, BLACK)
+    max_label = font.render(f"{max_time:.2f}", True, BLACK)
+    screen.blit(min_label, (graph_rect.x + graph_rect.width + 5, graph_rect.y + graph_rect.height - 15))
+    screen.blit(max_label, (graph_rect.x + graph_rect.width + 5, graph_rect.y))
+
 
 def draw_average_scores():
     draw_coming_soon("Average Scores")
